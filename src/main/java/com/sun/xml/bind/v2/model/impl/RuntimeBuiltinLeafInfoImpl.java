@@ -42,8 +42,6 @@ package com.sun.xml.bind.v2.model.impl;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -61,10 +59,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import javax.activation.DataHandler;
-import javax.activation.DataSource;
-import javax.activation.MimeType;
-import javax.activation.MimeTypeParseException;
 import javax.xml.bind.ValidationEvent;
 import javax.xml.bind.helpers.ValidationEventImpl;
 import javax.xml.datatype.DatatypeConfigurationException;
@@ -74,13 +68,7 @@ import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLStreamException;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Source;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.stream.StreamResult;
 
-import com.sun.istack.ByteArrayDataSource;
 import com.sun.xml.bind.DatatypeConverterImpl;
 import com.sun.xml.bind.WhiteSpaceProcessor;
 import com.sun.xml.bind.api.AccessorException;
@@ -93,8 +81,6 @@ import com.sun.xml.bind.v2.runtime.XMLSerializer;
 import com.sun.xml.bind.v2.runtime.output.Pcdata;
 import com.sun.xml.bind.v2.runtime.unmarshaller.Base64Data;
 import com.sun.xml.bind.v2.runtime.unmarshaller.UnmarshallingContext;
-import com.sun.xml.bind.v2.util.ByteArrayOutputStreamEx;
-import com.sun.xml.bind.v2.util.DataSourceSource;
 
 import org.xml.sax.SAXException;
 
@@ -361,93 +347,6 @@ public abstract class RuntimeBuiltinLeafInfoImpl<T> extends BuiltinLeafInfoImpl<
                 classes that map to base64Binary / MTOM related classes.
                 a part of the secondary binding.
             */
-        secondaryList.add(
-            new PcdataImpl<DataHandler>(DataHandler.class, createXS("base64Binary")) {
-                public DataHandler parse(CharSequence text) {
-                    if(text instanceof Base64Data)
-                        return ((Base64Data)text).getDataHandler();
-                    else
-                        return new DataHandler(new ByteArrayDataSource(decodeBase64(text),
-                            UnmarshallingContext.getInstance().getXMIMEContentType()));
-                }
-
-                public Base64Data print(DataHandler v) {
-                    Base64Data bd = new Base64Data();
-                    bd.set(v);
-                    return bd;
-                }
-            });
-        secondaryList.add(
-            new PcdataImpl<Source>(Source.class, createXS("base64Binary")) {
-                public Source parse(CharSequence text) throws SAXException  {
-                    try {
-                        if(text instanceof Base64Data)
-                            return new DataSourceSource( ((Base64Data)text).getDataHandler() );
-                        else
-                            return new DataSourceSource(new ByteArrayDataSource(decodeBase64(text),
-                                UnmarshallingContext.getInstance().getXMIMEContentType()));
-                    } catch (MimeTypeParseException e) {
-                        UnmarshallingContext.getInstance().handleError(e);
-                        return null;
-                    }
-                }
-
-                public Base64Data print(Source v) {
-                    XMLSerializer xs = XMLSerializer.getInstance();
-                    Base64Data bd = new Base64Data();
-
-                    String contentType = xs.getXMIMEContentType();
-                    MimeType mt = null;
-                    if(contentType!=null)
-                        try {
-                            mt = new MimeType(contentType);
-                        } catch (MimeTypeParseException e) {
-                            xs.handleError(e);
-                            // recover by ignoring the content type specification
-                        }
-
-                    if( v instanceof DataSourceSource ) {
-                        // if so, we already have immutable DataSource so
-                        // this can be done efficiently
-                        DataSource ds = ((DataSourceSource)v).getDataSource();
-
-                        String dsct = ds.getContentType();
-                        if(dsct!=null && (contentType==null || contentType.equals(dsct))) {
-                            bd.set(new DataHandler(ds));
-                            return bd;
-                        }
-                    }
-
-                    // general case. slower.
-
-                    // find out the encoding
-                    String charset=null;
-                    if(mt!=null)
-                        charset = mt.getParameter("charset");
-                    if(charset==null)
-                        charset = "UTF-8";
-
-                    try {
-                        ByteArrayOutputStreamEx baos = new ByteArrayOutputStreamEx();
-                        Transformer tr = xs.getIdentityTransformer();
-                        String defaultEncoding = tr.getOutputProperty(OutputKeys.ENCODING);
-                        tr.setOutputProperty(OutputKeys.ENCODING, charset);                        
-                        tr.transform(v, new StreamResult(new OutputStreamWriter(baos,charset)));
-                        tr.setOutputProperty(OutputKeys.ENCODING, defaultEncoding);
-                        baos.set(bd,"application/xml; charset="+charset);
-                        return bd;
-                    } catch (TransformerException e) {
-                        // TODO: marshaller error handling
-                        xs.handleError(e);
-                    } catch (UnsupportedEncodingException e) {
-                        xs.handleError(e);
-                    }
-
-                    // error recoverly
-                    bd.set(new byte[0],"application/xml");
-                    return bd;
-                }
-            });
         secondaryList.add(
             new StringImpl<XMLGregorianCalendar>(XMLGregorianCalendar.class,
                     createXS("anySimpleType"),
